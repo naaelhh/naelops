@@ -1,0 +1,25 @@
+{
+  "name": "naelops",
+  "version": "1.0.0",
+  "description": "NaelOps — assistant IA spécialisé en informatique (sysadmin, réseau, IT)",
+  "scripts": {
+    "docs": "node scripts/build-docs-index.js",
+    "dev": "npm run docs && vite",
+    "build": "npm run docs && vite build",
+    "preview": "vite preview"
+  },
+  "author": "Nael",
+  "license": "MIT",
+  "type": "module",
+  "devDependencies": {
+    "vite": "^8.3.5"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.3.2",
+    "@mlc-ai/web-llm": "^0.2.87",
+    "dompurify": "^3.4.17",
+    "highlight.js": "^11.12.0",
+    "marked": "^18.1.2"
+  },
+  "private": true
+}

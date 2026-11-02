@@ -1,0 +1,9 @@
+# Configuration du Cloudflare Worker (proxy CORS de NaelOps)
+name = "naelops-proxy"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+# Origines autorisées, séparées par des virgules.
+# Remplace par l'URL de ton site GitHub Pages (sans le chemin du dépôt) :
+ALLOWED_ORIGINS = "https://naaelhh.github.io,http://localhost:5173"

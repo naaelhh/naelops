@@ -1,0 +1,10 @@
+node_modules/
+dist/
+# Généré automatiquement depuis /docs par scripts/build-docs-index.js
+public/docs/
+# Cloudflare Worker
+worker/.wrangler/
+worker/node_modules/
+.DS_Store
+*.log
+.env*

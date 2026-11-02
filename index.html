@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0f14" />
+    <meta name="description" content="NaelOps — assistant IA spécialisé en administration systèmes et réseaux." />
+    <title>NaelOps — Assistant IT</title>
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div class="app">
+      <!-- ========== Barre latérale : historique ========== -->
+      <aside id="sidebar" class="sidebar" aria-label="Conversations">
+        <div class="brand">
+          <img src="./favicon.svg" alt="" width="28" height="28" />
+          <div>
+            <strong>NaelOps</strong>
+            <span>assistant sysadmin &amp; réseau</span>
+          </div>
+        </div>
+
+        <button id="newChat" class="btn btn-primary btn-new" type="button">
+          <span aria-hidden="true">＋</span> Nouvelle conversation
+        </button>
+
+        <nav id="convList" class="conv-list"></nav>
+
+        <div class="sidebar-footer">
+          <div id="ragBadge" class="rag-badge" title="Base de connaissances"></div>
+          <button id="openSettings" class="btn btn-ghost" type="button">⚙️ Paramètres</button>
+        </div>
+      </aside>
+      <div id="backdrop" class="backdrop" hidden></div>
+
+      <!-- ========== Zone principale : chat ========== -->
+      <main class="main">
+        <header class="topbar">
+          <button id="toggleSidebar" class="icon-btn mobile-only" type="button" aria-label="Afficher les conversations">☰</button>
+
+          <div class="mode-switch" role="radiogroup" aria-label="Mode de l'assistant">
+            <button type="button" role="radio" data-mode="expert">⚡ Expert <small>(API)</small></button>
+            <button type="button" role="radio" data-mode="local">💻 Local <small>(navigateur)</small></button>
+          </div>
+
+          <button id="modelBadge" class="model-badge" type="button" title="Changer de modèle"></button>
+        </header>
+
+        <div id="banner" class="banner" hidden></div>
+
+        <section id="messages" class="messages" aria-live="polite">
+          <div id="welcome" class="welcome">
+            <img src="./favicon.svg" alt="" width="56" height="56" />
+            <h1>Que veux-tu configurer aujourd'hui&nbsp;?</h1>
+            <p>Linux, Windows Server, Cisco, pfSense, Proxmox, AD, scripts… pose ta question.</p>
+            <div id="suggestions" class="suggestions"></div>
+          </div>
+        </section>
+
+        <form id="composer" class="composer">
+          <div class="composer-box">
+            <textarea id="input" rows="1" placeholder="Pose ta question IT…" title="Entrée pour envoyer, Maj+Entrée pour aller à la ligne" autocomplete="off"></textarea>
+            <button id="send" class="send-btn" type="submit" aria-label="Envoyer">
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 4l7 7-1.4 1.4L13 7.8V20h-2V7.8l-4.6 4.6L5 11z"/></svg>
+            </button>
+          </div>
+          <p class="disclaimer">NaelOps peut se tromper : relis toujours une commande avant de l'exécuter en production.</p>
+        </form>
+      </main>
+    </div>
+
+    <!-- ========== Paramètres ========== -->
+    <dialog id="settings" class="settings">
+      <form method="dialog" class="settings-inner">
+        <header class="settings-head">
+          <h2>Paramètres</h2>
+          <button class="icon-btn" value="close" aria-label="Fermer">✕</button>
+        </header>
+
+        <!-- Mode Expert -->
+        <section class="settings-section">
+          <h3>⚡ Mode Expert (API)</h3>
+
+          <label class="field">
+            <span>Fournisseur</span>
+            <select id="setProvider"></select>
+          </label>
+
+          <label class="field">
+            <span>Modèle</span>
+            <div class="row">
+              <select id="setModel"></select>
+              <button id="refreshModels" class="btn btn-ghost" type="button" title="Récupérer la liste à jour depuis l'API">↻ Actualiser</button>
+            </div>
+          </label>
+          <label id="customModelField" class="field" hidden>
+            <span>ID du modèle personnalisé</span>
+            <input id="setCustomModel" type="text" placeholder="ex. claude-sonnet-5-5" spellcheck="false" />
+          </label>
+
+          <label class="field">
+            <span>Clé API <a id="keyLink" href="#" target="_blank" rel="noopener">Obtenir une clé ↗</a></span>
+            <div class="row">
+              <input id="setApiKey" type="password" autocomplete="off" spellcheck="false" />
+              <button id="toggleKey" class="btn btn-ghost" type="button" aria-label="Afficher la clé">👁</button>
+            </div>
+          </label>
+
+          <div class="warning">
+            <strong>🔒 Ta clé reste dans ce navigateur.</strong>
+            Elle est stockée uniquement dans le <code>localStorage</code> de cet appareil et envoyée directement
+            au fournisseur (ou à ton proxy). <strong>N'utilise jamais ta clé sur un ordinateur partagé.</strong>
+          </div>
+
+          <label class="field">
+            <span>URL du proxy Cloudflare Worker <em>(optionnel, en cas de blocage CORS)</em></span>
+            <input id="setProxy" type="url" placeholder="https://naelops-proxy.<compte>.workers.dev" spellcheck="false" />
+          </label>
+        </section>
+
+        <!-- Mode Local -->
+        <section class="settings-section">
+          <h3>💻 Mode Local (navigateur)</h3>
+          <p class="hint">Fonctionne hors ligne et gratuitement, mais <strong>moins précis</strong> que le mode Expert.
+            Le modèle est téléchargé une seule fois puis mis en cache.</p>
+          <label class="field">
+            <span>Modèle local</span>
+            <select id="setLocalModel"></select>
+          </label>
+          <div id="webgpuStatus" class="status-line"></div>
+          <div class="row">
+            <button id="loadLocal" class="btn btn-ghost" type="button">⬇ Charger le modèle maintenant</button>
+          </div>
+          <div id="localProgress" class="progress" hidden>
+            <div class="progress-bar"><span></span></div>
+            <small></small>
+          </div>
+        </section>
+
+        <!-- RAG -->
+        <section class="settings-section">
+          <h3>📚 Base de connaissances (RAG)</h3>
+          <label class="switch">
+            <input id="setRag" type="checkbox" />
+            <span>Utiliser mes documents (<code>/docs</code>) pour enrichir les réponses</span>
+          </label>
+          <div id="ragStatus" class="status-line"></div>
+          <div class="row">
+            <button id="reindex" class="btn btn-ghost" type="button">↻ Réindexer les documents</button>
+          </div>
+        </section>
+
+        <!-- Données -->
+        <section class="settings-section">
+          <h3>🗂 Données</h3>
+          <div class="row wrap">
+            <button id="clearHistory" class="btn btn-danger" type="button">Effacer l'historique</button>
+            <button id="clearKeys" class="btn btn-danger" type="button">Effacer toutes les clés API</button>
+          </div>
+        </section>
+      </form>
+    </dialog>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
