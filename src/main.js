@@ -5,7 +5,7 @@
  * de génération (Expert via API, Local via WebLLM) et au RAG.
  */
 import './styles.css';
-import { SYSTEM_PROMPT, PROVIDERS, LOCAL_MODELS, SUGGESTIONS } from './config.js';
+import { SYSTEM_PROMPT, PROVIDERS, FREE_PROVIDERS, LOCAL_MODELS, SUGGESTIONS } from './config.js';
 import { loadSettings, saveSettings, loadConversations, saveConversations, clearConversations, newId } from './storage.js';
 import { renderMarkdown, copyText } from './ui/markdown.js';
 import * as expert from './providers/expert.js';
@@ -462,7 +462,10 @@ function fillSettings() {
   const provider = PROVIDERS[s.provider];
 
   $('#setProvider').innerHTML = Object.entries(PROVIDERS)
-    .map(([id, p]) => `<option value="${id}" ${id === s.provider ? 'selected' : ''}>${p.label}</option>`)
+    .map(([id, p]) => {
+      const free = FREE_PROVIDERS.includes(id) ? ' — offre gratuite ✓' : '';
+      return `<option value="${id}" ${id === s.provider ? 'selected' : ''}>${p.label}${free}</option>`;
+    })
     .join('');
 
   // Liste des modèles : ceux par défaut + ceux récupérés via l'API + « Autre… »

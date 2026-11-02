@@ -1,12 +1,12 @@
 # Proxy CORS NaelOps (Cloudflare Worker)
 
 > **En as-tu besoin ?** Probablement pas : lors des tests (novembre 2026), Anthropic, OpenAI,
-> Mistral et Groq acceptaient tous les appels directs depuis le navigateur.
+> Mistral, Groq, Gemini et OpenRouter acceptaient tous les appels directs depuis le navigateur.
 > Ce proxy est un **plan B** si un fournisseur se met à bloquer les requêtes (erreur
 > « Impossible de joindre … (problème réseau ou CORS) » dans NaelOps).
 
 Le Worker ne stocke aucune clé : il relaie simplement la requête (avec ta clé) vers le
-fournisseur et ajoute les en-têtes CORS. Il ne peut joindre que les 4 API connues.
+fournisseur et ajoute les en-têtes CORS. Il ne peut joindre que les API connues.
 L'offre gratuite de Cloudflare (100 000 requêtes/jour) suffit largement.
 
 ## Déploiement — méthode 1 : depuis le navigateur (sans rien installer)
@@ -46,3 +46,5 @@ curl -i -X OPTIONS https://naelops-proxy.ton-compte.workers.dev/groq/models \
 | `/openai/…`    | `https://api.openai.com/v1/…`      |
 | `/mistral/…`   | `https://api.mistral.ai/v1/…`      |
 | `/groq/…`      | `https://api.groq.com/openai/v1/…` |
+| `/gemini/…`    | `https://generativelanguage.googleapis.com/v1beta/openai/…` |
+| `/openrouter/…`| `https://openrouter.ai/api/v1/…`   |

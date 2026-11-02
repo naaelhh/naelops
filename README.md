@@ -11,7 +11,7 @@ ni base de données, et **aucune clé API dans le code**.
 
 | | |
 |---|---|
-| ⚡ **Mode Expert (API)** | Gros modèle via l'API d'**Anthropic (Claude)**, d'**OpenAI**, de **Mistral** ou de **Groq**, avec ta propre clé |
+| ⚡ **Mode Expert (API)** | Gros modèle via l'API d'**Anthropic (Claude)**, d'**OpenAI**, de **Mistral**, de **Groq**, de **Google Gemini** ou d'**OpenRouter**, avec ta propre clé (4 d'entre eux ont une offre gratuite) |
 | 💻 **Mode Local (navigateur)** | Petit modèle (Qwen2.5 / Llama 3.2) exécuté **dans le navigateur** avec WebLLM + WebGPU. Gratuit et hors ligne après le premier chargement |
 | 📚 **RAG** | Les réponses s'appuient sur **tes propres documents Markdown** (`/docs`) et citent la source |
 | 💬 **Chat moderne** | Streaming mot par mot, Markdown, coloration syntaxique, bouton « Copier » sur chaque bloc de code |
@@ -86,6 +86,8 @@ localStorage de ton navigateur** et n'est envoyée qu'au fournisseur (ou à ton 
 | Fournisseur | Où créer la clé | Gratuit ? |
 |---|---|---|
 | **Groq** (conseillé pour démarrer) | <https://console.groq.com/keys> | ✅ offre gratuite avec limites de débit, sans carte bancaire |
+| **Google Gemini** | <https://aistudio.google.com/apikey> | ✅ offre gratuite avec un compte Google (limites de débit ; les requêtes gratuites peuvent servir à améliorer les produits Google) |
+| **OpenRouter** | <https://openrouter.ai/settings/keys> | ✅ modèles `:free` et routeur `openrouter/free` (20 requêtes/min, 50/jour sans achat de crédit) |
 | **Mistral** | <https://console.mistral.ai/api-keys> | ✅ formule gratuite « Experiment » (limites de débit, vérification par téléphone) |
 | **Anthropic (Claude)** | <https://console.anthropic.com/settings/keys> | ❌ payant (crédit prépayé) |
 | **OpenAI** | <https://platform.openai.com/api-keys> | ❌ payant (crédit prépayé) |
@@ -99,7 +101,7 @@ clé (`gsk_…`) et colle-la dans NaelOps.
 
 ### Et si un fournisseur bloque les appels (CORS) ?
 
-Lors des tests, les 4 fournisseurs acceptaient les appels directs depuis le navigateur. Si
+Lors des tests, les 6 fournisseurs acceptaient les appels directs depuis le navigateur. Si
 l'un d'eux les bloque un jour, déploie le petit proxy gratuit fourni dans
 [`worker/`](worker/README.md) et colle son URL dans les Paramètres.
 

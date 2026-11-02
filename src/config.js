@@ -85,7 +85,35 @@ export const PROVIDERS = {
       { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B (instantané)' },
     ],
   },
+  gemini: {
+    label: 'Google Gemini',
+    type: 'openai', // via l'endpoint compatible OpenAI de Google
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    keyUrl: 'https://aistudio.google.com/apikey',
+    keyHint: 'AIza…',
+    models: [
+      { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash (recommandé)' },
+      { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash' },
+      { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite (très rapide)' },
+    ],
+  },
+  openrouter: {
+    label: 'OpenRouter',
+    type: 'openai',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    keyUrl: 'https://openrouter.ai/settings/keys',
+    keyHint: 'sk-or-…',
+    // Les modèles « :free » sont gratuits ; la liste change souvent (bouton « Actualiser »)
+    models: [
+      { id: 'openrouter/free', label: 'Routeur gratuit (choisit un modèle gratuit disponible)' },
+      { id: 'nvidia/nemotron-3-ultra-550b-a55b:free', label: 'Nemotron 3 Ultra 550B (gratuit)' },
+      { id: 'google/gemma-4-31b-it:free', label: 'Gemma 4 31B (gratuit)' },
+    ],
+  },
 };
+
+/** Fournisseurs ayant une offre gratuite (signalés dans l'interface). */
+export const FREE_PROVIDERS = ['groq', 'gemini', 'openrouter', 'mistral'];
 
 /**
  * Modèles du mode Local (WebLLM).

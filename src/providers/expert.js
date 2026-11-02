@@ -163,7 +163,8 @@ async function* readSSE(stream, signal) {
 async function httpError(res, provider) {
   let detail = '';
   try {
-    const json = await res.json();
+    let json = await res.json();
+    if (Array.isArray(json)) json = json[0] || {}; // format d'erreur de Google Gemini
     detail = json.error?.message || json.message || json.detail || '';
     if (typeof detail !== 'string') detail = JSON.stringify(detail);
   } catch {
@@ -172,7 +173,10 @@ async function httpError(res, provider) {
   const suffix = detail ? `\n\nDétail : ${detail}` : '';
   const name = provider.label;
 
-  switch (res.status) {
+  // Certains fournisseurs (Gemini) répondent 400 au lieu de 401 pour une clé invalide
+  const status = res.status === 400 && /api[ _-]?key/i.test(detail) ? 401 : res.status;
+
+  switch (status) {
     case 401:
     case 403:
       return new ApiError(`🔑 Clé API ${name} invalide ou non autorisée. Vérifie-la dans les Paramètres.${suffix}`, { status: res.status, kind: 'auth' });

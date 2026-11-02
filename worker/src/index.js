@@ -10,7 +10,7 @@
  * Sécurité :
  *  - le Worker ne stocke AUCUNE clé : la clé de l'utilisateur est simplement
  *    transmise au fournisseur (en-tête Authorization / x-api-key)
- *  - seuls les 4 fournisseurs connus sont joignables (pas de proxy ouvert)
+ *  - seuls les fournisseurs connus sont joignables (pas de proxy ouvert)
  *  - seules les origines listées dans ALLOWED_ORIGINS sont acceptées
  */
 
@@ -19,6 +19,8 @@ const UPSTREAMS = {
   openai: 'https://api.openai.com/v1',
   mistral: 'https://api.mistral.ai/v1',
   groq: 'https://api.groq.com/openai/v1',
+  gemini: 'https://generativelanguage.googleapis.com/v1beta/openai',
+  openrouter: 'https://openrouter.ai/api/v1',
 };
 
 // En-têtes de la requête transmis au fournisseur
@@ -54,7 +56,7 @@ export default {
     const [, provider, ...rest] = url.pathname.split('/');
     const upstream = UPSTREAMS[provider];
     if (!upstream) {
-      return json({ error: { message: 'Fournisseur inconnu. Utilise /anthropic, /openai, /mistral ou /groq.' } }, 404, cors);
+      return json({ error: { message: 'Fournisseur inconnu. Utilise /anthropic, /openai, /mistral, /groq, /gemini ou /openrouter.' } }, 404, cors);
     }
 
     const headers = new Headers();
