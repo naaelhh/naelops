@@ -5,7 +5,7 @@
  * de génération (Expert via API, Local via WebLLM) et au RAG.
  */
 import './styles.css';
-import { SYSTEM_PROMPT, PROVIDERS, FREE_PROVIDERS, LOCAL_MODELS, SUGGESTIONS } from './config.js';
+import { SYSTEM_PROMPT, PROVIDERS, FREE_PROVIDERS, LOCAL_MODELS, SUGGESTIONS, detectProvider } from './config.js';
 import { loadSettings, saveSettings, loadConversations, saveConversations, clearConversations, newId } from './storage.js';
 import { renderMarkdown, copyText } from './ui/markdown.js';
 import * as expert from './providers/expert.js';
@@ -515,6 +515,30 @@ function updateSettingsStatus() {
   rag.textContent = state.settings.ragEnabled ? ragState.message || 'En attente…' : 'Désactivé.';
 }
 
+function showKeyNotice(text) {
+  const n = $('#keyNotice');
+  n.textContent = text;
+  n.hidden = false;
+}
+
+/**
+ * Corrige les clés enregistrées sous le mauvais fournisseur
+ * (ex. clé OpenRouter collée alors que Groq était sélectionné).
+ */
+function fixMisplacedKeys() {
+  const s = state.settings;
+  let changed = false;
+  for (const [providerId, key] of Object.entries(s.apiKeys)) {
+    const detected = detectProvider(key);
+    if (!detected || detected === providerId || s.apiKeys[detected]) continue;
+    s.apiKeys[detected] = key;
+    delete s.apiKeys[providerId];
+    if (s.provider === providerId) s.provider = detected;
+    changed = true;
+  }
+  if (changed) saveSettings(s);
+}
+
 function bindSettings() {
   const s = state.settings;
 
@@ -544,6 +568,20 @@ function bindSettings() {
 
   $('#setApiKey').addEventListener('input', (e) => {
     const v = e.target.value.trim();
+    const detected = v && detectProvider(v);
+    $('#keyNotice').hidden = true;
+
+    // Clé d'un autre fournisseur : on bascule automatiquement sur le bon
+    if (detected && detected !== s.provider) {
+      delete s.apiKeys[s.provider];
+      s.apiKeys[detected] = v;
+      s.provider = detected;
+      persistSettings();
+      fillSettings();
+      showKeyNotice(`✓ Clé ${PROVIDERS[detected].label} reconnue : le fournisseur a été changé automatiquement.`);
+      return;
+    }
+
     if (v) s.apiKeys[s.provider] = v;
     else delete s.apiKeys[s.provider];
     persistSettings();
@@ -676,6 +714,7 @@ function bindComposer() {
    Initialisation
    ========================================================================== */
 function init() {
+  fixMisplacedKeys();
   renderSuggestions();
   renderSidebar();
   renderMessages();

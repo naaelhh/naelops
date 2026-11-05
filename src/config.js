@@ -112,6 +112,20 @@ export const PROVIDERS = {
   },
 };
 
+/**
+ * Devine le fournisseur d'une clé API d'après son préfixe.
+ * Évite l'erreur classique : coller une clé OpenRouter alors que Groq est sélectionné.
+ * @returns {string|null} ID du fournisseur, ou null si le format est inconnu (ex. Mistral)
+ */
+export function detectProvider(key) {
+  if (key.startsWith('sk-or-')) return 'openrouter';
+  if (key.startsWith('sk-ant-')) return 'anthropic';
+  if (key.startsWith('gsk_')) return 'groq';
+  if (key.startsWith('AIza')) return 'gemini';
+  if (key.startsWith('sk-')) return 'openai';
+  return null;
+}
+
 /** Fournisseurs ayant une offre gratuite (signalés dans l'interface). */
 export const FREE_PROVIDERS = ['groq', 'gemini', 'openrouter', 'mistral'];
 
