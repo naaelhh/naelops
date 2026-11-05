@@ -12,6 +12,7 @@ import * as expert from './providers/expert.js';
 import * as local from './providers/local.js';
 import { ragState, onRagChange, buildIndex, search, formatContext, clearCache, addPersonalDoc, removePersonalDoc, listPersonalDocs } from './rag/rag.js';
 import { extractText, ACCEPTED } from './rag/extract.js';
+import { webSearch, formatWebContext } from './rag/web.js';
 
 /* ==========================================================================
    État de l'application
@@ -214,6 +215,24 @@ function updateMessageEl(node, msg, { streaming = false, status = '' } = {}) {
     body.append(src);
   }
 
+  // Pages Internet consultées (bouton 🌐)
+  if (msg.webSources?.length && !streaming) {
+    const web = document.createElement('div');
+    web.className = 'sources';
+    web.innerHTML = '<span>🌐 Web :</span>';
+    for (const { title, url } of msg.webSources) {
+      const a = document.createElement('a');
+      a.className = 'source-chip web';
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = title.length > 48 ? `${title.slice(0, 46)}…` : title;
+      a.title = `${title}\n${url}`;
+      web.append(a);
+    }
+    body.append(web);
+  }
+
   if (!streaming && msg.meta) {
     const meta = document.createElement('div');
     meta.className = 'meta';
@@ -328,7 +347,8 @@ async function sendMessage(text) {
 
   try {
     // 1) Recherche dans la base de connaissances
-    let system = SYSTEM_PROMPT;
+    const today = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    let system = `${SYSTEM_PROMPT}\n\nDate du jour : ${today}.`;
     if (settings.ragEnabled) {
       updateMessageEl(botNode, botMsg, { streaming: true, status: '🔎 Recherche dans la base de connaissances…' });
       try {
@@ -341,9 +361,18 @@ async function sendMessage(text) {
         console.warn('[RAG] recherche impossible :', err);
       }
     }
+    // 2) Recherche sur Internet (bouton 🌐)
+    if (settings.webSearch) {
+      updateMessageEl(botNode, botMsg, { streaming: true, status: '🌐 Recherche sur Internet…' });
+      const results = (await webSearch(text, state.abort.signal)).slice(0, mode === 'local' ? 3 : 8);
+      if (results.length) {
+        system += formatWebContext(results, mode === 'local' ? 600 : 1500);
+        botMsg.webSources = results.map(({ title, url }) => ({ title, url }));
+      }
+    }
     if (state.abort.signal.aborted) throw new DOMException('Arrêté', 'AbortError');
 
-    // 2) Génération en streaming
+    // 3) Génération en streaming
     const onToken = (t) => {
       botMsg.content += t;
       schedule();
@@ -535,10 +564,28 @@ async function keepAttachment(item) {
   }
 }
 
+/** Bouton 🌐 : active / désactive la recherche Internet. */
+function updateWebToggle() {
+  const on = state.settings.webSearch;
+  const btn = $('#webToggle');
+  btn.setAttribute('aria-pressed', String(on));
+  btn.title = on
+    ? 'Recherche Internet activée (clique pour désactiver)'
+    : 'Recherche sur Internet : versions, fins de support, failles CVE, Wikipédia';
+  el.input.placeholder = on ? 'Pose ta question IT… 🌐 recherche Internet activée' : 'Pose ta question IT…';
+}
+
 function bindAttachments() {
   const input = $('#fileInput');
   input.accept = ACCEPTED;
   $('#attach').addEventListener('click', () => input.click());
+  $('#webToggle').addEventListener('click', () => {
+    state.settings.webSearch = !state.settings.webSearch;
+    persistSettings();
+    updateWebToggle();
+    el.input.focus();
+  });
+  updateWebToggle();
   input.addEventListener('change', () => {
     addAttachments([...input.files]);
     input.value = '';

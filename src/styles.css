@@ -233,6 +233,10 @@ code { font-family: var(--mono); font-size: 0.9em; }
   background: transparent; color: var(--muted); display: grid; place-items: center; margin-left: -8px;
 }
 .attach-btn:hover { background: var(--elev); color: var(--text); }
+.web-btn { margin-left: -6px; }
+.web-btn[aria-pressed='true'] { color: #6cb6ff; background: #0f1d2e; box-shadow: inset 0 0 0 1px #1f4b7a; }
+.source-chip.web { color: #6cb6ff; border-color: #1f4b7a; background: #0f1d2e; }
+.source-chip.web:hover { background: #142840; }
 .composer-box.dragover { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(61, 220, 151, 0.2); }
 .attachments { width: min(820px, 100%); margin: 0 auto 8px; display: flex; flex-wrap: wrap; gap: 6px; }
 .file-chip {

@@ -15,6 +15,7 @@ ni base de données, et **aucune clé API dans le code**.
 | 💻 **Mode Local (navigateur)** | Petit modèle (Qwen2.5 / Llama 3.2) exécuté **dans le navigateur** avec WebLLM + WebGPU. Gratuit et hors ligne après le premier chargement |
 | 📚 **RAG** | Les réponses s'appuient sur **tes propres documents Markdown** (`/docs`) et citent la source |
 | 📎 **Documents joints** | Joins un **PDF, Word (.docx), log, config ou script** à ta question (bouton 📎, glisser-déposer ou Ctrl+V) |
+| 🌐 **Recherche Internet** | Bouton 🌐 : dernières versions et fins de support, failles CVE récentes, Wikipédia — gratuit, sans clé |
 | 📁 **Base perso privée** | Importe tes propres documents : ils restent **dans ton navigateur** (jamais publiés) et servent à toutes tes questions |
 | 💬 **Chat moderne** | Streaming mot par mot, Markdown, coloration syntaxique, bouton « Copier » sur chaque bloc de code |
 | 🗂 **Historique** | Conversations sauvegardées dans le navigateur (localStorage) et listées dans la barre latérale |
@@ -38,6 +39,7 @@ naelops/
 │   └── rag/
 │       ├── rag.js              # découpage, index, recherche hybride, docs perso, IndexedDB
 │       ├── extract.js          # lecture du texte des PDF / Word / fichiers texte
+│       ├── web.js              # recherche Internet (endoflife.date, CVE, NVD, Wikipédia)
 │       └── embed.worker.js     # embeddings transformers.js (Web Worker)
 ├── docs/                       # ← TES documents Markdown (base de connaissances)
 ├── scripts/build-docs-index.js # génère public/docs/index.json au build
@@ -134,6 +136,21 @@ Conseils :
   clients**.
 
 Le RAG peut être désactivé dans **⚙️ Paramètres → Base de connaissances**.
+
+## Recherche sur Internet (bouton 🌐)
+
+Active le bouton 🌐 à gauche de la zone de saisie pour que NaelOps cherche des informations **à jour** avant de répondre. Les liens consultés s'affichent sous la réponse.
+
+| Source | Quand | Exemple de question |
+|---|---|---|
+| [endoflife.date](https://endoflife.date) | Un logiciel est cité (≈ 500 produits : Ubuntu, Debian, Windows Server, Proxmox, PHP, Zabbix…) | « Ubuntu 22.04 est encore supporté ? » |
+| [cve.org](https://www.cve.org) | Une faille est citée par son identifiant | « Explique-moi la CVE-2024-3094 » |
+| [NVD](https://nvd.nist.gov) | Question de sécurité sur un produit (failles des 120 derniers jours) | « Y a-t-il des failles récentes sur Proxmox ? » |
+| [Wikipédia](https://fr.wikipedia.org) | Toujours (FR, puis EN) | « C'est quoi le protocole OSPF ? » |
+
+- Gratuit et sans clé : les requêtes partent directement de ton navigateur vers ces sites.
+- Ce n'est pas un moteur de recherche généraliste (pas de forums ni de blogs) : les fournisseurs d'IA facturent la vraie recherche web (Gemini « Grounding with Google Search » n'est pas inclus dans l'offre gratuite, et Groq Compound a été arrêté en septembre 2026).
+- La date du jour est toujours donnée au modèle, pour qu'il sache que ses connaissances peuvent être dépassées.
 
 ## Documents joints et base perso (privée)
 

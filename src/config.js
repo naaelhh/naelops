@@ -159,4 +159,5 @@ export const DEFAULT_SETTINGS = {
   proxyUrl: '',              // URL du Cloudflare Worker (optionnel)
   localModel: LOCAL_MODELS[0].id,
   ragEnabled: true,
+  webSearch: false,          // recherche Internet (bouton 🌐)
 };
