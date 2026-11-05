@@ -131,6 +131,8 @@ async function doStream({ provider, providerId, model, apiKey, proxyUrl, system,
     if (isAnthropic) {
       if (json.type === 'content_block_delta' && json.delta?.type === 'text_delta') {
         onToken(json.delta.text);
+      } else if (json.type === 'message_delta' && json.delta?.stop_reason === 'max_tokens') {
+        onToken(TRUNCATED_NOTE);
       } else if (json.type === 'error') {
         throw new ApiError(`Erreur Anthropic : ${json.error?.message || 'inconnue'}`, { kind: 'server' });
       }
@@ -140,9 +142,13 @@ async function doStream({ provider, providerId, model, apiKey, proxyUrl, system,
       }
       const token = json.choices?.[0]?.delta?.content;
       if (token) onToken(token);
+      if (json.choices?.[0]?.finish_reason === 'length') onToken(TRUNCATED_NOTE);
     }
   }
 }
+
+/** Ajouté à la réponse quand le modèle s'arrête faute de place. */
+const TRUNCATED_NOTE = '\n\n*✂️ Réponse coupée (limite de longueur du modèle). Écris « continue » pour avoir la suite.*';
 
 /**
  * Récupère la liste des modèles disponibles pour la clé fournie.
@@ -183,6 +189,9 @@ async function* readSSE(stream, signal) {
         if (trimmed.startsWith('data:')) yield trimmed.slice(5).trim();
       }
     }
+    // Dernier morceau sans retour à la ligne final (cas de Gemini) : ne pas le perdre
+    const rest = (buffer + decoder.decode()).trim();
+    if (rest.startsWith('data:')) yield rest.slice(5).trim();
   } finally {
     reader.releaseLock();
   }
