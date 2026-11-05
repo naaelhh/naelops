@@ -56,8 +56,9 @@ function headers(provider, apiKey) {
  * @param {Array}  opts.messages    - [{ role, content }]
  * @param {(t: string) => void} opts.onToken
  * @param {AbortSignal} [opts.signal]
+ * @param {number} [opts.firstTokenTimeout] - délai max (ms) avant le premier mot
  */
-export async function streamChat({ providerId, model, apiKey, proxyUrl, system, messages, onToken, signal }) {
+export async function streamChat({ providerId, model, apiKey, proxyUrl, system, messages, onToken, signal, firstTokenTimeout = 90_000 }) {
   const provider = PROVIDERS[providerId];
   if (!provider) throw new ApiError(`Fournisseur inconnu : ${providerId}`, { kind: 'request' });
   if (!apiKey) {
@@ -67,6 +68,35 @@ export async function streamChat({ providerId, model, apiKey, proxyUrl, system, 
     );
   }
 
+  // Contrôleur interne : arrêt par l'utilisateur OU délai dépassé sans réponse
+  const ctrl = new AbortController();
+  const onOuterAbort = () => ctrl.abort();
+  signal?.addEventListener('abort', onOuterAbort);
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    ctrl.abort();
+  }, firstTokenTimeout);
+  const emit = (t) => {
+    clearTimeout(timer);
+    onToken(t);
+  };
+
+  try {
+    await doStream({ provider, providerId, model, apiKey, proxyUrl, system, messages, onToken: emit, signal: ctrl.signal });
+  } catch (err) {
+    if (timedOut && err.name === 'AbortError') {
+      throw new ApiError(`⌛ ${provider.label} (${model}) n'a pas répondu à temps.`, { kind: 'timeout' });
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', onOuterAbort);
+  }
+}
+
+/** Requête HTTP + lecture du flux (appelée par streamChat). */
+async function doStream({ provider, providerId, model, apiKey, proxyUrl, system, messages, onToken, signal }) {
   const isAnthropic = provider.type === 'anthropic';
   const url = `${baseUrl(providerId, proxyUrl)}/${isAnthropic ? 'messages' : 'chat/completions'}`;
   const body = isAnthropic

@@ -307,17 +307,7 @@ async function sendMessage(text) {
     };
 
     if (mode === 'expert') {
-      updateMessageEl(botNode, botMsg, { streaming: true, status: 'Réflexion…' });
-      await expert.streamChat({
-        providerId: settings.provider,
-        model: expertModel(),
-        apiKey: settings.apiKeys[settings.provider],
-        proxyUrl: settings.proxyUrl,
-        system,
-        messages: history,
-        onToken,
-        signal: state.abort.signal,
-      });
+      await streamExpertWithFallback({ botMsg, botNode, system, history, onToken });
     } else {
       const status = local.isLoaded(settings.localModel) ? 'Réflexion…' : '⬇ Chargement du modèle local…';
       updateMessageEl(botNode, botMsg, { streaming: true, status });
@@ -348,6 +338,71 @@ async function sendMessage(text) {
     if (botNode.isConnected) updateMessageEl(botNode, botMsg);
     scrollToBottom();
   }
+}
+
+/* ==========================================================================
+   Mode Expert : basculement automatique en cas de surcharge
+   ========================================================================== */
+
+/** Erreurs pour lesquelles un autre modèle a des chances de répondre. */
+const RETRYABLE = new Set(['server', 'quota', 'timeout']);
+
+/**
+ * Liste des essais, dans l'ordre : le modèle choisi, les autres modèles
+ * du même fournisseur, puis le modèle choisi des autres fournisseurs
+ * pour lesquels une clé est enregistrée.
+ */
+function expertCandidates() {
+  const { provider, apiKeys } = state.settings;
+  const list = [{ providerId: provider, model: expertModel(provider) }];
+  for (const m of PROVIDERS[provider].models) {
+    if (m.id !== list[0].model) list.push({ providerId: provider, model: m.id });
+  }
+  for (const id of Object.keys(PROVIDERS)) {
+    if (id !== provider && apiKeys[id]) list.push({ providerId: id, model: expertModel(id) });
+  }
+  return list.slice(0, 5);
+}
+
+/**
+ * Lance la génération et passe au candidat suivant si le modèle est
+ * surchargé, limité ou ne répond pas (seulement avant le premier mot).
+ */
+async function streamExpertWithFallback({ botMsg, botNode, system, history, onToken }) {
+  const { settings } = state;
+  const failures = [];
+
+  for (const { providerId, model } of expertCandidates()) {
+    const label = `${PROVIDERS[providerId].label} · ${model}`;
+    updateMessageEl(botNode, botMsg, {
+      streaming: true,
+      status: failures.length ? `🔁 ${failures.at(-1)} indisponible, essai avec ${label}…` : 'Réflexion…',
+    });
+    try {
+      await expert.streamChat({
+        providerId,
+        model,
+        apiKey: settings.apiKeys[providerId],
+        proxyUrl: settings.proxyUrl,
+        system,
+        messages: history,
+        onToken,
+        signal: state.abort.signal,
+      });
+      botMsg.meta = failures.length ? `${label} (bascule auto : ${failures.join(', ')} indisponible)` : label;
+      return;
+    } catch (err) {
+      const retry = err instanceof expert.ApiError && RETRYABLE.has(err.kind) && !botMsg.content;
+      if (!retry) throw err;
+      console.warn(`[Expert] ${label} :`, err.message);
+      failures.push(model);
+    }
+  }
+  throw new expert.ApiError(
+    `🔥 Tous les modèles essayés sont surchargés ou limités pour le moment (${failures.join(', ')}). ` +
+      'Réessaie dans quelques minutes, ajoute une clé d\'un autre fournisseur gratuit, ou passe en mode Local.',
+    { kind: 'server' },
+  );
 }
 
 function setGenerating(on) {
