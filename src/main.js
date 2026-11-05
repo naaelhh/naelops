@@ -87,7 +87,8 @@ function renderSidebar() {
 }
 
 function openConversation(id) {
-  if (state.abort) state.abort.abort();
+  if (id === state.currentId) return closeSidebar();
+  stopGeneration('changement de conversation');
   state.currentId = id;
   renderSidebar();
   renderMessages();
@@ -95,7 +96,7 @@ function openConversation(id) {
 }
 
 function newConversation() {
-  if (state.abort) state.abort.abort();
+  stopGeneration('nouvelle conversation');
   state.currentId = null;
   renderSidebar();
   renderMessages();
@@ -110,6 +111,13 @@ function deleteConversation(id) {
   if (state.currentId === id) state.currentId = null;
   renderSidebar();
   renderMessages();
+}
+
+/** Arrête la génération en cours en journalisant la cause (aide au dépannage). */
+function stopGeneration(reason) {
+  if (!state.abort) return;
+  console.info(`[NaelOps] Génération arrêtée : ${reason}`);
+  state.abort.abort();
 }
 
 function openSidebar() { el.sidebar.classList.add('open'); el.backdrop.hidden = false; }
@@ -753,8 +761,14 @@ function autoResize() {
 function bindComposer() {
   el.composer.addEventListener('submit', (e) => {
     e.preventDefault();
-    if (state.abort) state.abort.abort(); // bouton « Stop »
-    else sendMessage(el.input.value);
+    // Pendant une génération, seul un vrai clic sur ■ arrête (voir ci-dessous) :
+    // une touche Entrée répétée ou en double ne doit pas couper la réponse
+    if (!state.abort) sendMessage(el.input.value);
+  });
+  el.send.addEventListener('click', (e) => {
+    if (!state.abort) return; // hors génération : envoi normal via « submit »
+    e.preventDefault();
+    stopGeneration('bouton Stop');
   });
   el.input.addEventListener('input', autoResize);
   el.input.addEventListener('keydown', (e) => {
