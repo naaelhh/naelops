@@ -14,6 +14,8 @@ ni base de données, et **aucune clé API dans le code**.
 | ⚡ **Mode Expert (API)** | Gros modèle via l'API d'**Anthropic (Claude)**, d'**OpenAI**, de **Mistral**, de **Groq**, de **Google Gemini** ou d'**OpenRouter**, avec ta propre clé (4 d'entre eux ont une offre gratuite) |
 | 💻 **Mode Local (navigateur)** | Petit modèle (Qwen2.5 / Llama 3.2) exécuté **dans le navigateur** avec WebLLM + WebGPU. Gratuit et hors ligne après le premier chargement |
 | 📚 **RAG** | Les réponses s'appuient sur **tes propres documents Markdown** (`/docs`) et citent la source |
+| 📎 **Documents joints** | Joins un **PDF, Word (.docx), log, config ou script** à ta question (bouton 📎, glisser-déposer ou Ctrl+V) |
+| 📁 **Base perso privée** | Importe tes propres documents : ils restent **dans ton navigateur** (jamais publiés) et servent à toutes tes questions |
 | 💬 **Chat moderne** | Streaming mot par mot, Markdown, coloration syntaxique, bouton « Copier » sur chaque bloc de code |
 | 🗂 **Historique** | Conversations sauvegardées dans le navigateur (localStorage) et listées dans la barre latérale |
 | 📱 **Responsive** | Mode sombre, utilisable sur PC et sur mobile |
@@ -34,7 +36,8 @@ naelops/
 │   │   ├── local.js            # WebLLM (détection WebGPU, chargement, streaming)
 │   │   └── webllm.worker.js    # WebLLM dans un Web Worker
 │   └── rag/
-│       ├── rag.js              # découpage, index, recherche hybride, cache IndexedDB
+│       ├── rag.js              # découpage, index, recherche hybride, docs perso, IndexedDB
+│       ├── extract.js          # lecture du texte des PDF / Word / fichiers texte
 │       └── embed.worker.js     # embeddings transformers.js (Web Worker)
 ├── docs/                       # ← TES documents Markdown (base de connaissances)
 ├── scripts/build-docs-index.js # génère public/docs/index.json au build
@@ -132,6 +135,20 @@ Conseils :
 
 Le RAG peut être désactivé dans **⚙️ Paramètres → Base de connaissances**.
 
+## Documents joints et base perso (privée)
+
+Deux façons de donner tes propres documents à NaelOps, sans rien publier sur GitHub :
+
+| | Comment | Usage |
+|---|---|---|
+| 📎 **Joindre à une question** | Bouton 📎 à gauche de la zone de saisie, glisser-déposer, ou Ctrl+V d'un fichier | « Trouve l'erreur dans ce log », « Résume ce cours », « Explique cette config » |
+| 📁 **Base perso** | Bouton **📚 Garder dans ma base** sur une pièce jointe, ou **⚙️ Paramètres → Mes documents perso → Importer** | Le document sert ensuite à **toutes** tes questions, comme les mémos de `/docs` |
+
+- Formats lus : **PDF** (avec du texte, pas les scans), **Word .docx**, et tout fichier texte (`.txt`, `.md`, `.log`, `.conf`, `.yaml`, `.ps1`, `.sh`, `.csv`…). Max 25 Mo par fichier.
+- La lecture se fait **dans le navigateur** (pdf.js, mammoth). La base perso est stockée dans **IndexedDB** sur cet appareil : elle n'est pas synchronisée entre ton PC et ton téléphone.
+- ⚠️ En mode Expert, le contenu des documents utiles est **envoyé au fournisseur d'IA** avec ta question. En mode Local, rien ne quitte l'ordinateur.
+- Les documents perso apparaissent en orange (📁) dans les sources des réponses.
+
 ## Déployer sur GitHub Pages — pas à pas
 
 ### 1. Prérequis (une seule fois)
@@ -192,5 +209,5 @@ Chaque `git push` sur `main` redéploie ensuite le site automatiquement.
 
 [Vite](https://vite.dev) · [WebLLM](https://github.com/mlc-ai/web-llm) ·
 [transformers.js](https://github.com/huggingface/transformers.js) · [marked](https://marked.js.org) ·
-[highlight.js](https://highlightjs.org) · [DOMPurify](https://github.com/cure53/DOMPurify) ·
+[highlight.js](https://highlightjs.org) · [pdf.js](https://mozilla.github.io/pdf.js/) · [mammoth](https://github.com/mwilliamson/mammoth.js) · [DOMPurify](https://github.com/cure53/DOMPurify) ·
 [Cloudflare Workers](https://workers.cloudflare.com)

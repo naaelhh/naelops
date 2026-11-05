@@ -10,7 +10,8 @@ import { loadSettings, saveSettings, loadConversations, saveConversations, clear
 import { renderMarkdown, copyText } from './ui/markdown.js';
 import * as expert from './providers/expert.js';
 import * as local from './providers/local.js';
-import { ragState, onRagChange, buildIndex, search, formatContext, clearCache } from './rag/rag.js';
+import { ragState, onRagChange, buildIndex, search, formatContext, clearCache, addPersonalDoc, removePersonalDoc, listPersonalDocs } from './rag/rag.js';
+import { extractText, ACCEPTED } from './rag/extract.js';
 
 /* ==========================================================================
    État de l'application
@@ -22,7 +23,11 @@ const state = {
   abort: null,          // AbortController de la génération en cours
   webgpu: null,         // résultat de checkWebGPU()
   localProgress: null,  // { progress, text } pendant le chargement du modèle local
+  attachments: [],      // documents joints au prochain message : { id, name, status, text, error, saved }
 };
+
+/** Taille max du texte d'un document joint envoyé au modèle (caractères). */
+const ATTACH_LIMIT = { expert: 60_000, local: 5_000 };
 
 const $ = (sel) => document.querySelector(sel);
 const el = {
@@ -148,8 +153,21 @@ function updateMessageEl(node, msg, { streaming = false, status = '' } = {}) {
   const body = node.querySelector('.body');
 
   if (msg.role === 'user') {
-    body.innerHTML = '<div class="bubble"></div>';
-    body.firstChild.textContent = msg.content;
+    body.innerHTML = '';
+    if (msg.files?.length) {
+      const list = document.createElement('div');
+      list.className = 'bubble-files';
+      for (const f of msg.files) {
+        const chip = document.createElement('span');
+        chip.textContent = `📄 ${f.name}`;
+        list.append(chip);
+      }
+      body.append(list);
+    }
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.textContent = msg.content;
+    body.append(bubble);
     return;
   }
 
@@ -176,6 +194,15 @@ function updateMessageEl(node, msg, { streaming = false, status = '' } = {}) {
     src.className = 'sources';
     src.innerHTML = '<span>📚 Sources :</span>';
     for (const file of msg.sources) {
+      if (file.startsWith('📁 ')) {
+        // Document perso : pas de lien, il n'existe que dans ce navigateur
+        const chip = document.createElement('span');
+        chip.className = 'source-chip personal';
+        chip.title = 'Document perso (stocké dans ce navigateur)';
+        chip.textContent = file;
+        src.append(chip);
+        continue;
+      }
       const a = document.createElement('a');
       a.className = 'source-chip';
       a.href = `${import.meta.env.BASE_URL}docs/${file}`;
@@ -223,7 +250,11 @@ function renderSuggestions() {
    ========================================================================== */
 async function sendMessage(text) {
   text = text.trim();
-  if (!text || state.abort) return;
+  if (state.abort) return;
+  if (state.attachments.some((a) => a.status === 'loading')) return; // lecture en cours
+  const files = state.attachments.filter((a) => a.status === 'ready').map(({ name, text: t }) => ({ name, text: t }));
+  if (!text && files.length) text = files.length > 1 ? 'Analyse ces documents.' : 'Analyse ce document.';
+  if (!text) return;
 
   const { settings } = state;
   const mode = settings.mode;
@@ -245,7 +276,9 @@ async function sendMessage(text) {
     state.currentId = conv.id;
   }
 
+  const limit = ATTACH_LIMIT[mode];
   const userMsg = { role: 'user', content: text };
+  if (files.length) userMsg.files = files.map((f) => ({ name: f.name, text: f.text.slice(0, ATTACH_LIMIT.expert) }));
   const botMsg = {
     role: 'assistant',
     content: '',
@@ -258,9 +291,9 @@ async function sendMessage(text) {
   const history = [];
   for (const m of conv.messages) {
     if (m.role === 'assistant' && !m.content) history.pop();
-    else history.push({ role: m.role, content: m.content });
+    else history.push({ role: m.role, content: withFiles(m, limit) });
   }
-  history.push({ role: 'user', content: text });
+  history.push({ role: 'user', content: withFiles(userMsg, limit) });
   history.splice(0, Math.max(0, history.length - 20));
   if (history[0]?.role === 'assistant') history.shift();
 
@@ -270,6 +303,8 @@ async function sendMessage(text) {
 
   el.input.value = '';
   autoResize();
+  state.attachments = [];
+  renderAttachments();
   el.welcome.hidden = true;
   renderSidebar();
   el.messages.append(createMessageEl(userMsg));
@@ -300,7 +335,7 @@ async function sendMessage(text) {
         const passages = await search(text, mode === 'local' ? 3 : 5);
         if (passages.length) {
           system += formatContext(passages);
-          botMsg.sources = [...new Set(passages.map((p) => p.file))];
+          botMsg.sources = [...new Set(passages.map((p) => (p.personal ? `📁 ${p.file}` : p.file)))];
         }
       } catch (err) {
         console.warn('[RAG] recherche impossible :', err);
@@ -411,6 +446,188 @@ async function streamExpertWithFallback({ botMsg, botNode, system, history, onTo
       'Réessaie dans quelques minutes, ajoute une clé d\'un autre fournisseur gratuit, ou passe en mode Local.',
     { kind: 'server' },
   );
+}
+
+/* ==========================================================================
+   Documents joints au message
+   ========================================================================== */
+
+/** Contenu d'un message tel qu'envoyé au modèle : texte + documents joints. */
+function withFiles(msg, limit) {
+  if (!msg.files?.length) return msg.content;
+  const docs = msg.files.map((f) => {
+    const cut = f.text.length > limit;
+    return `--- Document joint : ${f.name} ---\n${f.text.slice(0, limit)}${cut ? '\n[… document tronqué …]' : ''}\n--- Fin de ${f.name} ---`;
+  });
+  return `${msg.content}\n\n${docs.join('\n\n')}`;
+}
+
+/** Lit des fichiers et les ajoute comme pièces jointes du prochain message. */
+async function addAttachments(fileList) {
+  for (const file of fileList) {
+    const item = { id: newId(), name: file.name, size: file.size, status: 'loading' };
+    state.attachments.push(item);
+    renderAttachments();
+    try {
+      item.text = (await extractText(file)).text;
+      item.status = 'ready';
+    } catch (err) {
+      item.status = 'error';
+      item.error = err.message;
+    }
+    renderAttachments();
+  }
+  el.input.focus();
+}
+
+function formatChars(n) {
+  return n >= 1000 ? `${Math.round(n / 1000)} k car.` : `${n} car.`;
+}
+
+function renderAttachments() {
+  const box = $('#attachments');
+  box.innerHTML = '';
+  box.hidden = !state.attachments.length;
+  for (const item of state.attachments) {
+    const chip = document.createElement('div');
+    chip.className = `file-chip ${item.status}`;
+    chip.title = item.error || item.name;
+    chip.innerHTML = '<span class="ico"></span><span class="name"></span><span class="size"></span>';
+    chip.querySelector('.ico').textContent = item.status === 'error' ? '⚠️' : '📄';
+    chip.querySelector('.name').textContent = item.status === 'error' ? `${item.name} : ${item.error}` : item.name;
+    chip.querySelector('.size').textContent = item.status === 'ready' ? formatChars(item.text.length) : '';
+
+    if (item.status === 'ready') {
+      const keep = document.createElement('button');
+      keep.type = 'button';
+      keep.className = item.saved ? 'saved' : '';
+      keep.textContent = item.saved ? '✓ Dans ma base' : item.saving ? 'Indexation…' : '📚 Garder dans ma base';
+      keep.title = 'Ajouter ce document à ta base de connaissances perso (privée, dans ce navigateur)';
+      keep.disabled = item.saved || item.saving;
+      keep.addEventListener('click', () => keepAttachment(item));
+      chip.append(keep);
+    }
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.textContent = '✕';
+    del.title = 'Retirer';
+    del.addEventListener('click', () => {
+      state.attachments = state.attachments.filter((a) => a !== item);
+      renderAttachments();
+    });
+    chip.append(del);
+    box.append(chip);
+  }
+}
+
+/** Ajoute une pièce jointe à la base perso. */
+async function keepAttachment(item) {
+  item.saving = true;
+  renderAttachments();
+  try {
+    await addPersonalDoc({ name: item.name, text: item.text });
+    item.saved = true;
+  } catch (err) {
+    alert(`Impossible d'ajouter ${item.name} à ta base : ${err.message}`);
+  } finally {
+    item.saving = false;
+    renderAttachments();
+  }
+}
+
+function bindAttachments() {
+  const input = $('#fileInput');
+  input.accept = ACCEPTED;
+  $('#attach').addEventListener('click', () => input.click());
+  input.addEventListener('change', () => {
+    addAttachments([...input.files]);
+    input.value = '';
+  });
+
+  // Glisser-déposer des fichiers sur la zone de saisie ou la conversation
+  const box = el.composer.querySelector('.composer-box');
+  for (const zone of [el.composer, el.messages]) {
+    zone.addEventListener('dragover', (e) => {
+      if (![...e.dataTransfer.types].includes('Files')) return;
+      e.preventDefault();
+      box.classList.add('dragover');
+    });
+    zone.addEventListener('dragleave', () => box.classList.remove('dragover'));
+    zone.addEventListener('drop', (e) => {
+      if (!e.dataTransfer.files.length) return;
+      e.preventDefault();
+      box.classList.remove('dragover');
+      addAttachments([...e.dataTransfer.files]);
+    });
+  }
+  // Coller un fichier (Ctrl+V depuis l'explorateur)
+  el.input.addEventListener('paste', (e) => {
+    const pasted = [...(e.clipboardData?.files || [])];
+    if (pasted.length) {
+      e.preventDefault();
+      addAttachments(pasted);
+    }
+  });
+}
+
+/* ==========================================================================
+   Documents perso (Paramètres)
+   ========================================================================== */
+
+async function renderPersonalList() {
+  const list = $('#personalList');
+  const docs = await listPersonalDocs();
+  list.innerHTML = docs.length ? '' : '<li><span class="name muted">Aucun document perso pour l\'instant.</span></li>';
+  for (const doc of docs) {
+    const li = document.createElement('li');
+    li.innerHTML = '<span>📁</span><span class="name"></span><span class="size"></span><button type="button" title="Supprimer de ma base">🗑</button>';
+    li.querySelector('.name').textContent = doc.name;
+    li.querySelector('.size').textContent = formatChars(doc.chars);
+    li.querySelector('button').addEventListener('click', async () => {
+      if (!confirm(`Retirer « ${doc.name} » de ta base de connaissances perso ?`)) return;
+      await removePersonalDoc(doc.id);
+      renderPersonalList();
+    });
+    list.append(li);
+  }
+}
+
+function bindPersonalDocs() {
+  const input = $('#personalInput');
+  input.accept = ACCEPTED;
+  const status = $('#personalStatus');
+  const show = (text, cls = '') => {
+    status.hidden = false;
+    status.className = `status-line ${cls}`;
+    status.textContent = text;
+  };
+
+  $('#importPersonal').addEventListener('click', () => input.click());
+  input.addEventListener('change', async () => {
+    const files = [...input.files];
+    input.value = '';
+    const btn = $('#importPersonal');
+    btn.disabled = true;
+    const errors = [];
+    let added = 0;
+    for (const file of files) {
+      try {
+        show(`Lecture de ${file.name}…`);
+        const doc = await extractText(file);
+        await addPersonalDoc(doc, (msg) => show(msg));
+        added++;
+        renderPersonalList();
+      } catch (err) {
+        errors.push(err.message);
+      }
+    }
+    btn.disabled = false;
+    if (errors.length) show(`${added} document(s) ajouté(s). ⚠️ ${errors.join(' · ')}`, 'bad');
+    else {
+      const hint = state.settings.ragEnabled ? '' : ' Active la base de connaissances ci-dessus pour qu\'il soit utilisé.';
+      show(`✓ ${added} document(s) ajouté(s) à ta base perso.${hint}`, 'ok');
+    }
+  });
 }
 
 function setGenerating(on) {
@@ -555,6 +772,7 @@ function fillSettings() {
 
   $('#setRag').checked = s.ragEnabled;
   updateSettingsStatus();
+  renderPersonalList();
 }
 
 function updateSettingsStatus() {
@@ -746,7 +964,7 @@ function updateRagBadge() {
   }
   b.className = `rag-badge ${ragState.status}`;
   b.textContent = ragState.status === 'ready'
-    ? `RAG : ${ragState.files} doc(s), ${ragState.chunks.length} passages`
+    ? `RAG : ${ragState.files} doc(s)${ragState.personalFiles ? ` + ${ragState.personalFiles} perso` : ''}, ${ragState.chunks.length} passages`
     : ragState.message || 'RAG en attente';
 }
 
@@ -790,7 +1008,9 @@ function init() {
   updateTopbar();
   updateBanner();
   bindComposer();
+  bindAttachments();
   bindSettings();
+  bindPersonalDocs();
 
   document.querySelectorAll('.mode-switch button').forEach((b) => {
     b.addEventListener('click', () => setMode(b.dataset.mode));

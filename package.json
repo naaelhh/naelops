@@ -19,7 +19,9 @@
     "@mlc-ai/web-llm": "^0.2.87",
     "dompurify": "^3.4.17",
     "highlight.js": "^11.12.0",
-    "marked": "^18.1.2"
+    "mammoth": "^1.13.0",
+    "marked": "^18.1.2",
+    "pdfjs-dist": "^6.5.438"
   },
   "private": true
 }

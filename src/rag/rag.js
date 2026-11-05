@@ -22,6 +22,7 @@ export const ragState = {
   status: 'idle',   // 'idle' | 'loading' | 'ready' | 'error' | 'empty'
   message: '',
   files: 0,
+  personalFiles: 0,
   chunks: [],       // [{ file, title, heading, text, vector }]
 };
 
@@ -72,11 +73,16 @@ function embed(texts) {
 
 const DB_NAME = 'naelops-rag';
 const STORE = 'embeddings';
+const PERSONAL = 'personal'; // documents perso importés par l'utilisateur (texte + vecteurs)
 
 function openDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore(STORE);
+    const req = indexedDB.open(DB_NAME, 2);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
+      if (!db.objectStoreNames.contains(PERSONAL)) db.createObjectStore(PERSONAL, { keyPath: 'id' });
+    };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
@@ -153,7 +159,7 @@ export function chunkMarkdown(markdown, fileTitle) {
       continue;
     }
     let current = '';
-    for (const para of splitParagraphs(text)) {
+    for (const para of splitParagraphs(text).flatMap(splitLong)) {
       if (current && current.length + para.length > CHUNK_SIZE) {
         chunks.push({ heading: h, text: current.trim() });
         current = '';
@@ -163,6 +169,23 @@ export function chunkMarkdown(markdown, fileTitle) {
     if (current.trim()) chunks.push({ heading: h, text: current.trim() });
   }
   return chunks;
+}
+
+/** Coupe un paragraphe trop long (texte de PDF) en morceaux, sur une fin de phrase si possible. */
+function splitLong(para) {
+  if (para.length <= CHUNK_SIZE * 1.5 || para.trimStart().startsWith('```')) return [para];
+  const parts = [];
+  let rest = para;
+  while (rest.length > CHUNK_SIZE) {
+    const window = rest.slice(0, CHUNK_SIZE);
+    let cut = Math.max(window.lastIndexOf('. '), window.lastIndexOf('\n'));
+    if (cut < CHUNK_SIZE * 0.5) cut = window.lastIndexOf(' ');
+    if (cut <= 0) cut = CHUNK_SIZE;
+    parts.push(rest.slice(0, cut + 1).trim());
+    rest = rest.slice(cut + 1);
+  }
+  if (rest.trim()) parts.push(rest.trim());
+  return parts;
 }
 
 /** Sépare en paragraphes en gardant chaque bloc de code entier. */
@@ -204,20 +227,16 @@ async function doBuild() {
   const res = await fetch(`${DOCS_BASE}index.json`, { cache: 'no-cache' });
   if (!res.ok) throw new Error('index des docs introuvable (docs/index.json)');
   const index = await res.json();
-
-  if (!index.files?.length) {
-    setState({ status: 'empty', message: 'Aucun document dans /docs', files: 0 });
-    return;
-  }
+  const files = index.files || [];
 
   const all = [];
-  for (const [i, file] of index.files.entries()) {
+  for (const [i, file] of files.entries()) {
     // La clé de cache inclut le hash du fichier : un doc modifié est réindexé
     const key = `${EMBEDDING_MODEL}|${file.path}|${file.hash}`;
     let entry = await cacheGet(key);
 
     if (!entry) {
-      setState({ message: `Indexation de ${file.path} (${i + 1}/${index.files.length})…` });
+      setState({ message: `Indexation de ${file.path} (${i + 1}/${files.length})…` });
       const md = await (await fetch(`${DOCS_BASE}${file.path}`)).text();
       const chunks = chunkMarkdown(md, file.title);
       // Préfixe « passage: » requis par les modèles e5 ; on ajoute titre et section
@@ -231,11 +250,107 @@ async function doBuild() {
     });
   }
 
+  // Documents perso (déjà découpés et vectorisés lors de l'import)
+  const personal = await personalGetAll();
+  for (const doc of personal) {
+    if (doc.model !== EMBEDDING_MODEL) continue;
+    all.push(...personalChunks(doc));
+  }
+
+  const total = files.length + personal.length;
   setState({
-    status: 'ready',
-    files: index.files.length,
+    status: total ? 'ready' : 'empty',
+    files: files.length,
+    personalFiles: personal.length,
     chunks: all,
-    message: `${index.files.length} document(s), ${all.length} passages indexés`,
+    message: total
+      ? `${files.length} doc(s)${personal.length ? ` + ${personal.length} perso` : ''}, ${all.length} passages indexés`
+      : 'Aucun document',
+  });
+}
+
+/* ---------- Documents perso (privés, stockés dans ce navigateur) ---------- */
+
+/** Passages d'un document perso, au format de l'index. */
+function personalChunks(doc) {
+  return doc.chunks.map((c, j) => ({
+    file: doc.name,
+    title: doc.name,
+    heading: c.heading,
+    text: c.text,
+    vector: doc.vectors[j],
+    personal: true,
+  }));
+}
+
+async function personalStore(mode, fn) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PERSONAL, mode);
+    const req = fn(tx.objectStore(PERSONAL));
+    tx.oncomplete = () => resolve(req?.result);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+function personalGetAll() {
+  return personalStore('readonly', (st) => st.getAll()).catch(() => []);
+}
+
+/** Liste des documents perso (sans le texte ni les vecteurs). */
+export async function listPersonalDocs() {
+  const docs = await personalGetAll();
+  return docs
+    .map(({ id, name, chars, addedAt }) => ({ id, name, chars, addedAt }))
+    .sort((a, b) => b.addedAt - a.addedAt);
+}
+
+/**
+ * Ajoute un document perso à la base : découpe, vectorisation, stockage.
+ * Un document du même nom est remplacé.
+ * @param {{ name: string, text: string }} doc
+ * @param {(msg: string) => void} [onProgress]
+ */
+export async function addPersonalDoc({ name, text }, onProgress) {
+  const existing = (await personalGetAll()).find((d) => d.name === name);
+  const chunks = chunkMarkdown(text, name);
+  const vectors = [];
+  // Vectorisation par lots pour afficher la progression sur les gros PDF
+  for (let i = 0; i < chunks.length; i += 32) {
+    onProgress?.(`Indexation de ${name} : ${Math.min(i + 32, chunks.length)}/${chunks.length} passages…`);
+    const batch = chunks.slice(i, i + 32);
+    vectors.push(...(await embed(batch.map((c) => `passage: ${name} — ${c.heading}\n${c.text}`))));
+  }
+  const doc = {
+    id: existing?.id ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+    name,
+    chars: text.length,
+    addedAt: Date.now(),
+    model: EMBEDDING_MODEL,
+    chunks,
+    vectors,
+  };
+  await personalStore('readwrite', (st) => st.put(doc));
+  await refreshPersonal();
+  return { id: doc.id, name, chunks: chunks.length };
+}
+
+export async function removePersonalDoc(id) {
+  await personalStore('readwrite', (st) => st.delete(id));
+  await refreshPersonal();
+}
+
+/** Remplace les passages perso de l'index déjà construit (sans tout recharger). */
+async function refreshPersonal() {
+  if (buildPromise) await buildPromise; // une indexation est peut-être en cours
+  if (ragState.status !== 'ready' && ragState.status !== 'empty') return buildIndex({ force: true });
+  const personal = (await personalGetAll()).filter((d) => d.model === EMBEDDING_MODEL);
+  const chunks = [...ragState.chunks.filter((c) => !c.personal), ...personal.flatMap(personalChunks)];
+  setState({
+    status: chunks.length ? 'ready' : 'empty',
+    personalFiles: personal.length,
+    chunks,
+    message: `${ragState.files} doc(s)${personal.length ? ` + ${personal.length} perso` : ''}, ${chunks.length} passages indexés`,
   });
 }
 
@@ -259,6 +374,7 @@ function tokenize(text) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .split(/[^a-z0-9.-]+/)
+    .map((w) => w.replace(/^[.-]+|[.-]+$/g, '')) // « ZEBRA-42. » → « zebra-42 » (garde 10.42.0.7)
     .filter((w) => w.length > 1 && !STOPWORDS.has(w));
 }
 
@@ -298,7 +414,7 @@ export async function search(query, k = 4) {
 export function formatContext(passages) {
   if (!passages.length) return '';
   const blocks = passages.map(
-    (p, i) => `[${i + 1}] Source : ${p.file} — ${p.heading}\n${p.text}`,
+    (p, i) => `[${i + 1}] Source : ${p.file}${p.personal ? ' (document personnel)' : ''} — ${p.heading}\n${p.text}`,
   );
   return `\n\n---\nExtraits de la base de connaissances interne (utilise-les en priorité et cite la source sous la forme « (source : nom-du-fichier.md) ») :\n\n${blocks.join('\n\n')}\n---`;
 }
